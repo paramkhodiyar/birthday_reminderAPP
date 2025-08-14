@@ -17,7 +17,7 @@ import {useTheme} from '../context/ThemeContext';
 import {useBirthday, Birthday} from '../context/BirthdayContext';
 import BirthdayCard from '../components/BirthdayCards';
 import AddBirthdayModal from '../components/AddBirthdayModal';
-// import NotificationService from '../services/NotificationService';
+import NotificationService from '../services/NotificationService';
 
 
 const SavedBirthdaysScreen = () => {
@@ -492,11 +492,11 @@ const SavedBirthdaysScreen = () => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Saved Birthdays</Text>
         <View style={styles.headerButtons}>
-          {/* <TouchableOpacity
+          <TouchableOpacity
             style={styles.testButton}
             onPress={() => NotificationService.showTestNotification()}>
             <Icon name="notifications" size={24} color={colors.primary} />
-          </TouchableOpacity> */}
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
             onPress={() => setShowAddModal(true)}>

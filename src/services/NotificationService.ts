@@ -1,14 +1,22 @@
 // src/services/NotificationService.ts
-// Temporarily disabled due to package uninstallation
-// Will be re-implemented with a compatible notification package later
-
-/*
 import PushNotification from 'react-native-push-notification';
 import { Platform } from 'react-native';
-import { Birthday } from '../types/Birthday';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Birthday } from '../context/BirthdayContext';
+
+export interface NotificationSettings {
+  enabled: boolean;
+  time: string; // Format: "HH:MM"
+  daysPrior: number; // 0-4 days
+}
 
 class NotificationService {
   private static instance: NotificationService;
+  private settings: NotificationSettings = {
+    enabled: true,
+    time: "09:00",
+    daysPrior: 1
+  };
 
   private constructor() {}
 
@@ -19,8 +27,11 @@ class NotificationService {
     return NotificationService.instance;
   }
 
-  public initialize(): void {
+  public async initialize(): Promise<void> {
     try {
+      // Load settings from storage
+      await this.loadSettings();
+
       if (Platform.OS === 'android') {
         PushNotification.createChannel(
           {
@@ -59,8 +70,13 @@ class NotificationService {
   public async requestPermissions(): Promise<boolean> {
     try {
       if (Platform.OS === 'ios') {
-        const authStatus = await PushNotification.requestPermissions(['alert', 'badge', 'sound']);
-        return authStatus === 'authorized';
+        return new Promise((resolve) => {
+          PushNotification.requestPermissions(['alert', 'badge', 'sound']).then(
+            (data) => {
+              resolve(data.alert || data.badge || data.sound);
+            }
+          );
+        });
       }
       return true;
     } catch (error) {
@@ -69,36 +85,84 @@ class NotificationService {
     }
   }
 
-  public scheduleBirthdayNotifications(birthday: Birthday): void {
+  public async getSettings(): Promise<NotificationSettings> {
+    await this.loadSettings();
+    return this.settings;
+  }
+
+  public async updateSettings(newSettings: Partial<NotificationSettings>): Promise<void> {
+    this.settings = { ...this.settings, ...newSettings };
+    await this.saveSettings();
+  }
+
+  private async loadSettings(): Promise<void> {
     try {
+      const savedSettings = await AsyncStorage.getItem('notificationSettings');
+      if (savedSettings) {
+        this.settings = { ...this.settings, ...JSON.parse(savedSettings) };
+      }
+    } catch (error) {
+      console.error('Error loading notification settings:', error);
+    }
+  }
+
+  private async saveSettings(): Promise<void> {
+    try {
+      await AsyncStorage.setItem('notificationSettings', JSON.stringify(this.settings));
+    } catch (error) {
+      console.error('Error saving notification settings:', error);
+    }
+  }
+
+  public async scheduleBirthdayNotifications(birthday: Birthday): Promise<void> {
+    if (!this.settings.enabled) {
+      return;
+    }
+
+    try {
+      // Cancel existing notifications for this birthday
       this.cancelBirthdayNotifications(birthday.id);
+
       const { name, dateOfBirth } = birthday;
       const birthDate = new Date(dateOfBirth);
       const currentYear = new Date().getFullYear();
-      let nextBirthday = new Date(currentYear, birthDate.getMonth(), birthDate.getDate());
       
+      // Calculate next birthday
+      let nextBirthday = new Date(currentYear, birthDate.getMonth(), birthDate.getDate());
       if (nextBirthday < new Date()) {
         nextBirthday = new Date(currentYear + 1, birthDate.getMonth(), birthDate.getDate());
       }
 
-      const threeDaysBefore = new Date(nextBirthday);
-      threeDaysBefore.setDate(threeDaysBefore.getDate() - 3);
+      // Set the notification time
+      const [hours, minutes] = this.settings.time.split(':').map(Number);
+      nextBirthday.setHours(hours, minutes, 0, 0);
 
-      if (threeDaysBefore > new Date()) {
-        this.scheduleNotification(
-          `birthday-reminder-${birthday.id}`,
-          `${name} has their birthday in 3 days! 🎉`,
-          `Don't forget to wish ${name} a happy birthday!`,
-          threeDaysBefore,
-          birthday.id
-        );
+      // Schedule prior notification if daysPrior > 0
+      if (this.settings.daysPrior > 0) {
+        const priorDate = new Date(nextBirthday);
+        priorDate.setDate(priorDate.getDate() - this.settings.daysPrior);
+
+        if (priorDate > new Date()) {
+          const priorMessage = this.settings.daysPrior === 1 
+            ? `${name} has their birthday tomorrow! 🎉`
+            : `${name} has their birthday in ${this.settings.daysPrior} days! 🎉`;
+
+          this.scheduleNotification(
+            `birthday-reminder-${birthday.id}`,
+            'Birthday Reminder',
+            priorMessage,
+            priorDate,
+            birthday.id
+          );
+        }
       }
 
+      // Schedule birthday day notification
       if (nextBirthday > new Date()) {
         this.scheduleNotification(
           `birthday-today-${birthday.id}`,
-          `🎂 Today is ${name}'s birthday! 🎉`,
-          `Wish ${name} a wonderful birthday!`,
+          'Birthday Today! 🎂',
+          `Wohooo! Today is ${name}'s birthday! 🎉`,
           nextBirthday,
           birthday.id
         );
@@ -151,17 +215,28 @@ class NotificationService {
 
   public getScheduledNotifications(): Promise<any[]> {
     return new Promise((resolve) => {
-      PushNotification.getScheduledLocalNotifications((notifications) => {
-        resolve(notifications || []);
-      });
+      try {
+        PushNotification.getScheduledLocalNotifications((notifications) => {
+          resolve(notifications || []);
+        });
+      } catch (error) {
+        console.error('Error getting scheduled notifications:', error);
+        resolve([]);
+      }
     });
   }
 
   public showTestNotification(): void {
     try {
+      const testMessage = this.settings.daysPrior === 0 
+        ? "Wohooo! Today is John's birthday! 🎉"
+        : this.settings.daysPrior === 1
+        ? "John has their birthday tomorrow! 🎉"
+        : `John has their birthday in ${this.settings.daysPrior} days! 🎉`;
+
       PushNotification.localNotification({
-        title: 'Test Notification',
-        message: 'This is a test notification from Birthday Calculator!',
+        title: this.settings.daysPrior === 0 ? 'Birthday Today! 🎂' : 'Birthday Reminder',
+        message: testMessage,
         channelId: 'birthday-reminders',
       });
     } catch (error) {
@@ -169,12 +244,17 @@ class NotificationService {
     }
   }
 
-  public updateAllBirthdayNotifications(birthdays: Birthday[]): void {
+  public async updateAllBirthdayNotifications(birthdays: Birthday[]): Promise<void> {
+    if (!this.settings.enabled) {
+      this.cancelAllNotifications();
+      return;
+    }
+
     try {
       this.cancelAllNotifications();
-      birthdays.forEach(birthday => {
-        this.scheduleBirthdayNotifications(birthday);
-      });
+      for (const birthday of birthdays) {
+        await this.scheduleBirthdayNotifications(birthday);
+      }
     } catch (error) {
       console.error('Error updating all birthday notifications:', error);
     }
@@ -182,18 +262,3 @@ class NotificationService {
 }
 
 export default NotificationService.getInstance();
-*/
-
-// Placeholder export to prevent import errors
-const NotificationService = {
-  initialize: () => console.log('Notifications disabled'),
-  requestPermissions: () => Promise.resolve(false),
-  scheduleBirthdayNotifications: () => console.log('Notifications disabled'),
-  cancelBirthdayNotifications: () => console.log('Notifications disabled'),
-  cancelAllNotifications: () => console.log('Notifications disabled'),
-  getScheduledNotifications: () => Promise.resolve([]),
-  showTestNotification: () => console.log('Notifications disabled'),
-  updateAllBirthdayNotifications: () => console.log('Notifications disabled'),
-};
-
-export default NotificationService;

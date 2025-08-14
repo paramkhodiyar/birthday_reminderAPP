@@ -16,23 +16,25 @@ import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen
 import {ThemeProvider} from './src/context/ThemeContext';
 import {BirthdayProvider} from './src/context/BirthdayContext';
 import {useTheme} from './src/context/ThemeContext';
+import NotificationService from './src/services/NotificationService';
 
 const Tab = createBottomTabNavigator();
 
 const AppContent = () => {
   const {theme, colors} = useTheme();
 
-  // useEffect(() => {
-  //   const setupNotifications = async () => {
-  //     try {
-  //       await configureNotifications();
-  //     } catch (error) {
-  //       console.error('Failed to configure notifications:', error);
-  //     }
-  //   };
+  useEffect(() => {
+    const setupNotifications = async () => {
+      try {
+        await NotificationService.initialize();
+        await NotificationService.requestPermissions();
+      } catch (error) {
+        console.error('Failed to configure notifications:', error);
+      }
+    };
     
-  //   setupNotifications();
-  // }, []);
+    setupNotifications();
+  }, []);
 
 
   return (
