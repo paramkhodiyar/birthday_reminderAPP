@@ -6,7 +6,7 @@ import {StatusBar} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Feather from 'react-native-vector-icons/Feather';
-import { configureNotifications } from './src/utils/notifications';
+// import { configureNotifications } from './src/utils/notifications';
 import {useEffect} from 'react';
 
 
@@ -22,17 +22,17 @@ const Tab = createBottomTabNavigator();
 const AppContent = () => {
   const {theme, colors} = useTheme();
 
-  useEffect(() => {
-    const setupNotifications = async () => {
-      try {
-        await configureNotifications();
-      } catch (error) {
-        console.error('Failed to configure notifications:', error);
-      }
-    };
+  // useEffect(() => {
+  //   const setupNotifications = async () => {
+  //     try {
+  //       await configureNotifications();
+  //     } catch (error) {
+  //       console.error('Failed to configure notifications:', error);
+  //     }
+  //   };
     
-    setupNotifications();
-  }, []);
+  //   setupNotifications();
+  // }, []);
 
 
   return (

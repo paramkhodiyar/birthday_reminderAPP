@@ -1,7 +1,7 @@
 // src/context/BirthdayContext.tsx
 import React, {createContext, useContext, useState, useEffect, ReactNode} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import NotificationService from '../services/NotificationService';
+// import NotificationService from '../services/NotificationService';
 
 export interface Birthday {
   id: string;
@@ -37,7 +37,7 @@ export const BirthdayProvider: React.FC<BirthdayProviderProps> = ({children}) =>
   useEffect(() => {
     loadBirthdays();
     // Initialize notification service
-    NotificationService.initialize();
+    // NotificationService.initialize();
   }, []);
 
   const loadBirthdays = async () => {
@@ -54,7 +54,7 @@ export const BirthdayProvider: React.FC<BirthdayProviderProps> = ({children}) =>
         setBirthdays(updatedBirthdays);
         
         // Update notifications for all birthdays
-        NotificationService.updateAllBirthdayNotifications(updatedBirthdays);
+        // NotificationService.updateAllBirthdayNotifications(updatedBirthdays);
       }
     } catch (error) {
       console.log('Error loading birthdays:', error);
@@ -79,12 +79,12 @@ export const BirthdayProvider: React.FC<BirthdayProviderProps> = ({children}) =>
     await saveBirthdays(updatedBirthdays);
     
     // Schedule notifications for the new birthday
-    NotificationService.scheduleBirthdayNotifications(newBirthday);
+    // NotificationService.scheduleBirthdayNotifications(newBirthday);
   };
 
   const removeBirthday = async (id: string) => {
     // Cancel notifications for the birthday being removed
-    NotificationService.cancelBirthdayNotifications(id);
+    // NotificationService.cancelBirthdayNotifications(id);
     
     const updatedBirthdays = birthdays.filter(birthday => birthday.id !== id);
     setBirthdays(updatedBirthdays);
@@ -101,7 +101,7 @@ export const BirthdayProvider: React.FC<BirthdayProviderProps> = ({children}) =>
     await saveBirthdays(updatedBirthdays);
     
     // Update notifications for all birthdays
-    NotificationService.updateAllBirthdayNotifications(updatedBirthdays);
+    // NotificationService.updateAllBirthdayNotifications(updatedBirthdays);
   };
 
   return (
