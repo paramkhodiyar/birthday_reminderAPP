@@ -7,13 +7,13 @@ import {
   ScrollView,
   Alert,
   Switch,
-  Modal,
   SafeAreaView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import PushNotification from 'react-native-push-notification';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useBirthday } from '../context/BirthdayContext';
+import NotificationService from '../services/NotificationService';
 
 interface NotificationSettings {
   enabled: boolean;
@@ -30,8 +30,6 @@ const NotificationSettingsScreen = () => {
     time: "09:00",
     daysPrior: 1
   });
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [tempTime, setTempTime] = useState(new Date());
 
   useEffect(() => {
     loadSettings();
@@ -40,17 +38,8 @@ const NotificationSettingsScreen = () => {
 
   const loadSettings = async () => {
     try {
-      const savedSettings = await AsyncStorage.getItem('notificationSettings');
-      if (savedSettings) {
-        const parsedSettings = JSON.parse(savedSettings);
-        setSettings({ ...settings, ...parsedSettings });
-        
-        // Set temp time for picker
-        const [hours, minutes] = parsedSettings.time?.split(':').map(Number) || [9, 0];
-        const timeDate = new Date();
-        timeDate.setHours(hours, minutes, 0, 0);
-        setTempTime(timeDate);
-      }
+      const notificationSettings = await NotificationService.getSettings();
+      setSettings(notificationSettings);
     } catch (error) {
       console.error('Error loading settings:', error);
     }
@@ -58,9 +47,8 @@ const NotificationSettingsScreen = () => {
 
   const loadScheduledNotifications = async () => {
     try {
-      PushNotification.getScheduledLocalNotifications((notifications) => {
-        setScheduledNotifications(notifications || []);
-      });
+      const notifications = await NotificationService.getScheduledNotifications();
+      setScheduledNotifications(notifications);
     } catch (error) {
       console.error('Error loading scheduled notifications:', error);
     }
@@ -71,40 +59,23 @@ const NotificationSettingsScreen = () => {
     setSettings(newSettings);
     
     try {
-      await AsyncStorage.setItem('notificationSettings', JSON.stringify(newSettings));
+      await NotificationService.updateSettings({ [key]: value });
+      
+      // Update all birthday notifications when settings change
+      if (newSettings.enabled) {
+        await NotificationService.updateAllBirthdayNotifications(birthdays);
+      } else {
+        NotificationService.cancelAllNotifications();
+      }
+      
+      await loadScheduledNotifications();
     } catch (error) {
       console.error('Error saving settings:', error);
     }
-    
-    // Reschedule notifications when settings change
-    if (newSettings.enabled) {
-      scheduleAllBirthdayNotifications(birthdays, newSettings);
-    } else {
-      PushNotification.cancelAllLocalNotifications();
-    }
-    await loadScheduledNotifications();
-  };
-
-  const handleTimeConfirm = async (selectedTime: Date) => {
-    const timeString = `${selectedTime.getHours().toString().padStart(2, '0')}:${selectedTime.getMinutes().toString().padStart(2, '0')}`;
-    await updateSetting('time', timeString);
-    setShowTimePicker(false);
   };
 
   const testNotification = () => {
-    const testMessage = settings.daysPrior === 0 
-      ? "Wohooo! Today is John's birthday! 🎉"
-      : settings.daysPrior === 1
-      ? "John has their birthday tomorrow! 🎉"
-      : `John has their birthday in ${settings.daysPrior} days! 🎉`;
-
-    PushNotification.localNotification({
-      title: settings.daysPrior === 0 ? 'Birthday Today! 🎂' : 'Birthday Reminder',
-      message: testMessage,
-      channelId: 'birthday-reminders',
-    });
-    
-    Alert.alert('Test Notification', 'A test notification has been sent based on your current settings!');
+    NotificationService.showTestNotification();
   };
 
   const refreshNotifications = async () => {
@@ -122,7 +93,7 @@ const NotificationSettingsScreen = () => {
           text: 'Clear All',
           style: 'destructive',
           onPress: async () => {
-            PushNotification.cancelAllLocalNotifications();
+            NotificationService.cancelAllNotifications();
             await loadScheduledNotifications();
             Alert.alert('Cleared', 'All notifications have been cleared!');
           },
@@ -134,70 +105,13 @@ const NotificationSettingsScreen = () => {
   const rescheduleAllNotifications = async () => {
     try {
       if (settings.enabled) {
-        scheduleAllBirthdayNotifications(birthdays, settings);
+        await NotificationService.updateAllBirthdayNotifications(birthdays);
       }
       await loadScheduledNotifications();
       Alert.alert('Success', 'All birthday notifications have been rescheduled!');
     } catch (error) {
       Alert.alert('Error', 'Failed to reschedule notifications');
     }
-  };
-
-  const scheduleAllBirthdayNotifications = (birthdays: any[], settings: NotificationSettings) => {
-    PushNotification.cancelAllLocalNotifications();
-    
-    birthdays.forEach((birthday) => {
-      const { name, dateOfBirth } = birthday;
-      const birthDate = new Date(dateOfBirth);
-      const currentYear = new Date().getFullYear();
-      
-      // Calculate next birthday
-      let nextBirthday = new Date(currentYear, birthDate.getMonth(), birthDate.getDate());
-      if (nextBirthday < new Date()) {
-        nextBirthday = new Date(currentYear + 1, birthDate.getMonth(), birthDate.getDate());
-      }
-
-      // Set the notification time
-      const [hours, minutes] = settings.time.split(':').map(Number);
-      nextBirthday.setHours(hours, minutes, 0, 0);
-
-      // Schedule prior notification if daysPrior > 0
-      if (settings.daysPrior > 0) {
-        const priorDate = new Date(nextBirthday);
-        priorDate.setDate(priorDate.getDate() - settings.daysPrior);
-
-        if (priorDate > new Date()) {
-          const priorMessage = settings.daysPrior === 1 
-            ? `${name} has their birthday tomorrow! 🎉`
-            : `${name} has their birthday in ${settings.daysPrior} days! 🎉`;
-
-          PushNotification.localNotificationSchedule({
-            id: `birthday-reminder-${birthday.id}`,
-            title: 'Birthday Reminder',
-            message: priorMessage,
-            date: priorDate,
-            repeatType: 'year',
-            allowWhileIdle: true,
-            channelId: 'birthday-reminders',
-            userInfo: { birthdayId: birthday.id },
-          });
-        }
-      }
-
-      // Schedule birthday day notification
-      if (nextBirthday > new Date()) {
-        PushNotification.localNotificationSchedule({
-          id: `birthday-today-${birthday.id}`,
-          title: 'Birthday Today! 🎂',
-          message: `Wohooo! Today is ${name}'s birthday! 🎉`,
-          date: nextBirthday,
-          repeatType: 'year',
-          allowWhileIdle: true,
-          channelId: 'birthday-reminders',
-          userInfo: { birthdayId: birthday.id },
-        });
-      }
-    });
   };
 
   const getDaysPriorText = (days: number) => {
@@ -380,7 +294,40 @@ const NotificationSettingsScreen = () => {
     disabledOverlay: {
       opacity: 0.5,
     },
+    timeSelector: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 10,
+      marginBottom: 10,
+    },
+    timeButton: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+      minWidth: 50,
+      alignItems: 'center',
+    },
+    timeButtonActive: {
+      backgroundColor: colors.primary,
+    },
+    timeButtonInactive: {
+      backgroundColor: colors.background,
+    },
+    timeButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    timeButtonTextActive: {
+      color: colors.surface,
+    },
+    timeButtonTextInactive: {
+      color: colors.textSecondary,
+    },
   });
+
+  const timeOptions = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00'];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -411,11 +358,7 @@ const NotificationSettingsScreen = () => {
 
             <View style={[!settings.enabled && styles.disabledOverlay]}>
               {/* Notification Time */}
-              <TouchableOpacity 
-                style={styles.settingRow}
-                onPress={() => settings.enabled && setShowTimePicker(true)}
-                disabled={!settings.enabled}
-              >
+              <View style={styles.settingRow}>
                 <View style={styles.settingLeft}>
                   <Text style={styles.settingTitle}>Notification Time</Text>
                   <Text style={styles.settingDescription}>
@@ -423,7 +366,32 @@ const NotificationSettingsScreen = () => {
                   </Text>
                 </View>
                 <Text style={styles.settingValue}>{settings.time}</Text>
-              </TouchableOpacity>
+              </View>
+              
+              <View style={styles.timeSelector}>
+                {timeOptions.map((time) => (
+                  <TouchableOpacity
+                    key={time}
+                    style={[
+                      styles.timeButton,
+                      settings.time === time 
+                        ? styles.timeButtonActive 
+                        : styles.timeButtonInactive
+                    ]}
+                    onPress={() => settings.enabled && updateSetting('time', time)}
+                    disabled={!settings.enabled}
+                  >
+                    <Text style={[
+                      styles.timeButtonText,
+                      settings.time === time 
+                        ? styles.timeButtonTextActive 
+                        : styles.timeButtonTextInactive
+                    ]}>
+                      {time}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               {/* Days Prior Selection */}
               <View style={styles.settingRow}>
@@ -523,8 +491,6 @@ const NotificationSettingsScreen = () => {
             )}
           </View>
         </ScrollView>
-
-        {/* Time Picker Modal */}
       </View>
     </SafeAreaView>
   );

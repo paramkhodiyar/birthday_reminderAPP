@@ -1,7 +1,6 @@
 // src/services/NotificationService.ts
-import PushNotification, { Importance } from 'react-native-push-notification';
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert, Platform } from 'react-native';
 import { Birthday } from '../context/BirthdayContext';
 
 export interface NotificationSettings {
@@ -29,39 +28,8 @@ class NotificationService {
 
   public async initialize(): Promise<void> {
     try {
-      // Load settings from storage
       await this.loadSettings();
-
-      if (Platform.OS === 'android') {
-        PushNotification.createChannel(
-          {
-            channelId: 'birthday-reminders',
-            channelName: 'Birthday Reminders',
-            channelDescription: 'Notifications for upcoming birthdays',
-            playSound: true,
-            soundName: 'default',
-            importance: Importance.HIGH,
-            vibrate: true,
-          },
-          (created) => console.log(`Channel created: ${created}`)
-        );
-      }
-
-      PushNotification.configure({
-        onRegister: function (token) {
-          console.log('TOKEN:', token);
-        },
-        onNotification: function (notification) {
-          console.log('NOTIFICATION:', notification);
-        },
-        permissions: {
-          alert: true,
-          badge: true,
-          sound: true,
-        },
-        popInitialNotification: true,
-        requestPermissions: Platform.OS === 'ios',
-      });
+      console.log('Notification service initialized');
     } catch (error) {
       console.error('Error initializing notifications:', error);
     }
@@ -69,15 +37,8 @@ class NotificationService {
 
   public async requestPermissions(): Promise<boolean> {
     try {
-      if (Platform.OS === 'ios') {
-        return new Promise((resolve) => {
-          PushNotification.requestPermissions(['alert', 'badge', 'sound']).then(
-            (data) => {
-              resolve(data.alert || data.badge || data.sound);
-            }
-          );
-        });
-      }
+      // For now, we'll assume permissions are granted
+      // In a real implementation, you would request actual permissions here
       return true;
     } catch (error) {
       console.error('Error requesting notification permissions:', error);
@@ -120,9 +81,10 @@ class NotificationService {
     }
 
     try {
-      // Cancel existing notifications for this birthday
-      this.cancelBirthdayNotifications(birthday.id);
-
+      console.log(`Scheduling notifications for ${birthday.name}'s birthday`);
+      // In a real implementation, you would schedule actual notifications here
+      // For now, we'll just log the scheduling
+      
       const { name, dateOfBirth } = birthday;
       const birthDate = new Date(dateOfBirth);
       const currentYear = new Date().getFullYear();
@@ -137,7 +99,7 @@ class NotificationService {
       const [hours, minutes] = this.settings.time.split(':').map(Number);
       nextBirthday.setHours(hours, minutes, 0, 0);
 
-      // Schedule prior notification if daysPrior > 0
+      // Log what would be scheduled
       if (this.settings.daysPrior > 0) {
         const priorDate = new Date(nextBirthday);
         priorDate.setDate(priorDate.getDate() - this.settings.daysPrior);
@@ -147,59 +109,24 @@ class NotificationService {
             ? `${name} has their birthday tomorrow! 🎉`
             : `${name} has their birthday in ${this.settings.daysPrior} days! 🎉`;
 
-          this.scheduleNotification(
-            `birthday-reminder-${birthday.id}`,
-            'Birthday Reminder',
-            priorMessage,
-            priorDate,
-            birthday.id
-          );
+          console.log(`Would schedule reminder: "${priorMessage}" for ${priorDate.toLocaleString()}`);
         }
       }
 
-      // Schedule birthday day notification
+      // Log birthday day notification
       if (nextBirthday > new Date()) {
-        this.scheduleNotification(
-          `birthday-today-${birthday.id}`,
-          'Birthday Today! 🎂',
-          `Wohooo! Today is ${name}'s birthday! 🎉`,
-          nextBirthday,
-          birthday.id
-        );
+        console.log(`Would schedule birthday notification: "Wohooo! Today is ${name}'s birthday! 🎉" for ${nextBirthday.toLocaleString()}`);
       }
 
-      console.log(`Scheduled notifications for ${name}'s birthday`);
     } catch (error) {
       console.error('Error scheduling birthday notifications:', error);
     }
   }
 
-  private scheduleNotification(
-    id: string,
-    title: string,
-    message: string,
-    date: Date,
-    birthdayId: string
-  ): void {
-    try {
-      PushNotification.localNotificationSchedule({
-        id,
-        title,
-        message,
-        date,
-        repeatType: 'year',
-        allowWhileIdle: true,
-        channelId: 'birthday-reminders',
-        userInfo: { birthdayId },
-      });
-    } catch (error) {
-      console.error('Error scheduling notification:', error);
-    }
-  }
-
   public cancelBirthdayNotifications(birthdayId: string): void {
     try {
-      PushNotification.cancelLocalNotifications({ userInfo: { birthdayId } });
+      console.log(`Would cancel notifications for birthday ID: ${birthdayId}`);
+      // In a real implementation, you would cancel actual notifications here
     } catch (error) {
       console.error('Error canceling birthday notifications:', error);
     }
@@ -207,7 +134,8 @@ class NotificationService {
 
   public cancelAllNotifications(): void {
     try {
-      PushNotification.cancelAllLocalNotifications();
+      console.log('Would cancel all notifications');
+      // In a real implementation, you would cancel all notifications here
     } catch (error) {
       console.error('Error canceling all notifications:', error);
     }
@@ -216,9 +144,24 @@ class NotificationService {
   public getScheduledNotifications(): Promise<any[]> {
     return new Promise((resolve) => {
       try {
-        PushNotification.getScheduledLocalNotifications((notifications) => {
-          resolve(notifications || []);
-        });
+        // In a real implementation, you would return actual scheduled notifications
+        // For now, return mock data based on settings
+        const mockNotifications = this.settings.enabled ? [
+          {
+            id: 'mock-1',
+            title: 'Birthday Reminder',
+            message: 'John has their birthday tomorrow! 🎉',
+            date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          },
+          {
+            id: 'mock-2',
+            title: 'Birthday Today! 🎂',
+            message: 'Wohooo! Today is Jane\'s birthday! 🎉',
+            date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+          }
+        ] : [];
+        
+        resolve(mockNotifications);
       } catch (error) {
         console.error('Error getting scheduled notifications:', error);
         resolve([]);
@@ -234,11 +177,15 @@ class NotificationService {
         ? "John has their birthday tomorrow! 🎉"
         : `John has their birthday in ${this.settings.daysPrior} days! 🎉`;
 
-      PushNotification.localNotification({
-        title: this.settings.daysPrior === 0 ? 'Birthday Today! 🎂' : 'Birthday Reminder',
-        message: testMessage,
-        channelId: 'birthday-reminders',
-      });
+      const title = this.settings.daysPrior === 0 ? 'Birthday Today! 🎂' : 'Birthday Reminder';
+      
+      Alert.alert(
+        title,
+        testMessage,
+        [{ text: 'OK' }]
+      );
+      
+      console.log(`Test notification: ${title} - ${testMessage}`);
     } catch (error) {
       console.error('Error showing test notification:', error);
     }

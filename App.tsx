@@ -9,14 +9,13 @@ import Feather from 'react-native-vector-icons/Feather';
 // import { configureNotifications } from './src/utils/notifications';
 import {useEffect} from 'react';
 
-
 import HomeScreen from './src/screens/HomeScreen';
 import SavedBirthdaysScreen from './src/screens/SavedBirthdaysScreen';
 import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen';
 import {ThemeProvider} from './src/context/ThemeContext';
 import {BirthdayProvider} from './src/context/BirthdayContext';
 import {useTheme} from './src/context/ThemeContext';
-import { configureNotifications } from './src/utils/notifications';
+import NotificationService from './src/services/NotificationService';
 
 const Tab = createBottomTabNavigator();
 
@@ -26,7 +25,7 @@ const AppContent = () => {
   useEffect(() => {
     const setupNotifications = async () => {
       try {
-        await configureNotifications();
+        await NotificationService.initialize();
       } catch (error) {
         console.error('Failed to configure notifications:', error);
       }

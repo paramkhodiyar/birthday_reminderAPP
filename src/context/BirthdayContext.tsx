@@ -1,7 +1,7 @@
 // src/context/BirthdayContext.tsx
 import React, {createContext, useContext, useState, useEffect, ReactNode} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import PushNotification from 'react-native-push-notification';
+import NotificationService from '../services/NotificationService';
 
 export interface Birthday {
   id: string;
@@ -69,6 +69,10 @@ export const BirthdayProvider: React.FC<BirthdayProviderProps> = ({children}) =>
       ...birthday,
       id: Date.now().toString(),
     };
+    
+    // Schedule notifications for the new birthday
+    await NotificationService.scheduleBirthdayNotifications(newBirthday);
+    
     const updatedBirthdays = [...birthdays, newBirthday];
     setBirthdays(updatedBirthdays);
     await saveBirthdays(updatedBirthdays);
@@ -76,7 +80,7 @@ export const BirthdayProvider: React.FC<BirthdayProviderProps> = ({children}) =>
 
   const removeBirthday = async (id: string) => {
     // Cancel notifications for this birthday
-    PushNotification.cancelLocalNotifications({ userInfo: { birthdayId: id } });
+    NotificationService.cancelBirthdayNotifications(id);
 
     const updatedBirthdays = birthdays.filter(birthday => birthday.id !== id);
     setBirthdays(updatedBirthdays);
