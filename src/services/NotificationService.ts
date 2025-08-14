@@ -1,5 +1,5 @@
 // src/services/NotificationService.ts
-import PushNotification from 'react-native-push-notification';
+import PushNotification, { Importance } from 'react-native-push-notification';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Birthday } from '../context/BirthdayContext';
@@ -40,7 +40,7 @@ class NotificationService {
             channelDescription: 'Notifications for upcoming birthdays',
             playSound: true,
             soundName: 'default',
-            importance: 4,
+            importance: Importance.HIGH,
             vibrate: true,
           },
           (created) => console.log(`Channel created: ${created}`)
