@@ -11,10 +11,15 @@ import {
   SafeAreaView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import DatePicker from 'react-native-date-picker';
+import PushNotification from 'react-native-push-notification';
 import { useTheme } from '../context/ThemeContext';
-import NotificationService, { NotificationSettings } from '../services/NotificationService';
 import { useBirthday } from '../context/BirthdayContext';
+
+interface NotificationSettings {
+  enabled: boolean;
+  time: string;
+  daysPrior: number;
+}
 
 const NotificationSettingsScreen = () => {
   const { colors } = useTheme();
@@ -35,14 +40,17 @@ const NotificationSettingsScreen = () => {
 
   const loadSettings = async () => {
     try {
-      const currentSettings = await NotificationService.getSettings();
-      setSettings(currentSettings);
-      
-      // Set temp time for picker
-      const [hours, minutes] = currentSettings.time.split(':').map(Number);
-      const timeDate = new Date();
-      timeDate.setHours(hours, minutes, 0, 0);
-      setTempTime(timeDate);
+      const savedSettings = await AsyncStorage.getItem('notificationSettings');
+      if (savedSettings) {
+        const parsedSettings = JSON.parse(savedSettings);
+        setSettings({ ...settings, ...parsedSettings });
+        
+        // Set temp time for picker
+        const [hours, minutes] = parsedSettings.time?.split(':').map(Number) || [9, 0];
+        const timeDate = new Date();
+        timeDate.setHours(hours, minutes, 0, 0);
+        setTempTime(timeDate);
+      }
     } catch (error) {
       console.error('Error loading settings:', error);
     }
@@ -50,8 +58,9 @@ const NotificationSettingsScreen = () => {
 
   const loadScheduledNotifications = async () => {
     try {
-      const notifications = await NotificationService.getScheduledNotifications();
-      setScheduledNotifications(notifications);
+      PushNotification.getScheduledLocalNotifications((notifications) => {
+        setScheduledNotifications(notifications || []);
+      });
     } catch (error) {
       console.error('Error loading scheduled notifications:', error);
     }
@@ -60,13 +69,20 @@ const NotificationSettingsScreen = () => {
   const updateSetting = async (key: keyof NotificationSettings, value: any) => {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
-    await NotificationService.updateSettings({ [key]: value });
     
-    // Update all notifications when settings change
-    if (key === 'enabled' || key === 'time' || key === 'daysPrior') {
-      await NotificationService.updateAllBirthdayNotifications(birthdays);
-      await loadScheduledNotifications();
+    try {
+      await AsyncStorage.setItem('notificationSettings', JSON.stringify(newSettings));
+    } catch (error) {
+      console.error('Error saving settings:', error);
     }
+    
+    // Reschedule notifications when settings change
+    if (newSettings.enabled) {
+      scheduleAllBirthdayNotifications(birthdays, newSettings);
+    } else {
+      PushNotification.cancelAllLocalNotifications();
+    }
+    await loadScheduledNotifications();
   };
 
   const handleTimeConfirm = async (selectedTime: Date) => {
@@ -76,7 +92,18 @@ const NotificationSettingsScreen = () => {
   };
 
   const testNotification = () => {
-    NotificationService.showTestNotification();
+    const testMessage = settings.daysPrior === 0 
+      ? "Wohooo! Today is John's birthday! 🎉"
+      : settings.daysPrior === 1
+      ? "John has their birthday tomorrow! 🎉"
+      : `John has their birthday in ${settings.daysPrior} days! 🎉`;
+
+    PushNotification.localNotification({
+      title: settings.daysPrior === 0 ? 'Birthday Today! 🎂' : 'Birthday Reminder',
+      message: testMessage,
+      channelId: 'birthday-reminders',
+    });
+    
     Alert.alert('Test Notification', 'A test notification has been sent based on your current settings!');
   };
 
@@ -95,7 +122,7 @@ const NotificationSettingsScreen = () => {
           text: 'Clear All',
           style: 'destructive',
           onPress: async () => {
-            NotificationService.cancelAllNotifications();
+            PushNotification.cancelAllLocalNotifications();
             await loadScheduledNotifications();
             Alert.alert('Cleared', 'All notifications have been cleared!');
           },
@@ -106,12 +133,71 @@ const NotificationSettingsScreen = () => {
 
   const rescheduleAllNotifications = async () => {
     try {
-      await NotificationService.updateAllBirthdayNotifications(birthdays);
+      if (settings.enabled) {
+        scheduleAllBirthdayNotifications(birthdays, settings);
+      }
       await loadScheduledNotifications();
       Alert.alert('Success', 'All birthday notifications have been rescheduled!');
     } catch (error) {
       Alert.alert('Error', 'Failed to reschedule notifications');
     }
+  };
+
+  const scheduleAllBirthdayNotifications = (birthdays: any[], settings: NotificationSettings) => {
+    PushNotification.cancelAllLocalNotifications();
+    
+    birthdays.forEach((birthday) => {
+      const { name, dateOfBirth } = birthday;
+      const birthDate = new Date(dateOfBirth);
+      const currentYear = new Date().getFullYear();
+      
+      // Calculate next birthday
+      let nextBirthday = new Date(currentYear, birthDate.getMonth(), birthDate.getDate());
+      if (nextBirthday < new Date()) {
+        nextBirthday = new Date(currentYear + 1, birthDate.getMonth(), birthDate.getDate());
+      }
+
+      // Set the notification time
+      const [hours, minutes] = settings.time.split(':').map(Number);
+      nextBirthday.setHours(hours, minutes, 0, 0);
+
+      // Schedule prior notification if daysPrior > 0
+      if (settings.daysPrior > 0) {
+        const priorDate = new Date(nextBirthday);
+        priorDate.setDate(priorDate.getDate() - settings.daysPrior);
+
+        if (priorDate > new Date()) {
+          const priorMessage = settings.daysPrior === 1 
+            ? `${name} has their birthday tomorrow! 🎉`
+            : `${name} has their birthday in ${settings.daysPrior} days! 🎉`;
+
+          PushNotification.localNotificationSchedule({
+            id: `birthday-reminder-${birthday.id}`,
+            title: 'Birthday Reminder',
+            message: priorMessage,
+            date: priorDate,
+            repeatType: 'year',
+            allowWhileIdle: true,
+            channelId: 'birthday-reminders',
+            userInfo: { birthdayId: birthday.id },
+          });
+        }
+      }
+
+      // Schedule birthday day notification
+      if (nextBirthday > new Date()) {
+        PushNotification.localNotificationSchedule({
+          id: `birthday-today-${birthday.id}`,
+          title: 'Birthday Today! 🎂',
+          message: `Wohooo! Today is ${name}'s birthday! 🎉`,
+          date: nextBirthday,
+          repeatType: 'year',
+          allowWhileIdle: true,
+          channelId: 'birthday-reminders',
+          userInfo: { birthdayId: birthday.id },
+        });
+      }
+    });
   };
 
   const getDaysPriorText = (days: number) => {
@@ -439,87 +525,6 @@ const NotificationSettingsScreen = () => {
         </ScrollView>
 
         {/* Time Picker Modal */}
-        <Modal
-          visible={showTimePicker}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowTimePicker(false)}
-        >
-          <View style={{
-            flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.5)'
-          }}>
-            <View style={{
-              backgroundColor: colors.surface,
-              borderRadius: 20,
-              padding: 20,
-              alignItems: 'center',
-              minWidth: 300,
-            }}>
-              <Text style={{
-                fontSize: 18,
-                fontWeight: '600',
-                color: colors.text,
-                marginBottom: 20
-              }}>
-                Select Notification Time
-              </Text>
-              
-              <DatePicker
-                date={tempTime}
-                onDateChange={setTempTime}
-                mode="time"
-                textColor={colors.text}
-                style={{ height: 200 }}
-              />
-              
-              <View style={{
-                flexDirection: 'row',
-                justifyContent: 'space-around',
-                width: '100%',
-                marginTop: 20
-              }}>
-                <TouchableOpacity
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 30,
-                    borderRadius: 8,
-                    backgroundColor: colors.textSecondary + '20'
-                  }}
-                  onPress={() => setShowTimePicker(false)}
-                >
-                  <Text style={{
-                    color: colors.textSecondary,
-                    fontSize: 16,
-                    fontWeight: '600'
-                  }}>
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 30,
-                    borderRadius: 8,
-                    backgroundColor: colors.primary
-                  }}
-                  onPress={() => handleTimeConfirm(tempTime)}
-                >
-                  <Text style={{
-                    color: colors.surface,
-                    fontSize: 16,
-                    fontWeight: '600'
-                  }}>
-                    Confirm
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </View>
     </SafeAreaView>
   );
